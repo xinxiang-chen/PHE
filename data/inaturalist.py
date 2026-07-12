@@ -3,18 +3,38 @@ from copy import deepcopy
 import numpy as np
 from typing import Any, Tuple
 from PIL import Image
-from torchvision.datasets import INaturalist
+from torch.utils.data import Dataset
 
 
-class INaturalist_SUB(INaturalist):
+class INaturalist_SUB(Dataset):
     def __init__(self, root, version='2017', subclassname='', transform=None, target_transform=None, download=False):
-
-        super(INaturalist_SUB, self).__init__(root=root, version=version, target_type='full', transform=transform, target_transform=target_transform, download=download)
 
         # Check if the provided subclassname is valid
         valid_super_categories = ['Actinopterygii', 'Amphibia', 'Animalia', 'Arachnida', 'Aves', 'Chromista', 'Fungi', 'Insecta', 'Mammalia', 'Mollusca', 'Plantae', 'Protozoa', 'Reptilia']
         if subclassname not in valid_super_categories:
             raise ValueError(f"Invalid subclassname '{subclassname}'. Please provide one of {valid_super_categories}.")
+
+        self.root = root
+        self.transform = transform
+        self.target_transform = target_transform
+
+        # Build the (super_category/species) category list and file index directly
+        # from a flat `root/<super_category>/<species>/<img>` layout (no torchvision
+        # version folder / annotation files required).
+        self.all_categories = []
+        for scat in sorted(os.listdir(root)):
+            scat_path = os.path.join(root, scat)
+            if not os.path.isdir(scat_path):
+                continue
+            for subcat in sorted(os.listdir(scat_path)):
+                if os.path.isdir(os.path.join(scat_path, subcat)):
+                    self.all_categories.append(os.path.join(scat, subcat))
+
+        # index of all files: (full category id, filename)
+        self.index = []
+        for dir_index, dir_name in enumerate(self.all_categories):
+            for fname in os.listdir(os.path.join(self.root, dir_name)):
+                self.index.append((dir_index, fname))
 
         # Filter the dataset based on the provided subclassname
         self._filter_dataset(subclassname)
@@ -143,7 +163,7 @@ def get_inaturalist_datasets(train_transform,
     np.random.seed(seed)
 
     # Init entire training set
-    whole_training_set = INaturalist_SUB(root=data_root.inaturalist_root, subclassname=subclassname, transform=train_transform)
+    whole_training_set = INaturalist_SUB(root=data_root, subclassname=subclassname, transform=train_transform)
 
     # Get labelled training set which has subsampled classes, then subsample some indices from that
     train_dataset_labelled = subsample_classes(deepcopy(whole_training_set), include_classes=train_classes)
@@ -161,7 +181,7 @@ def get_inaturalist_datasets(train_transform,
     train_dataset_unlabelled = subsample_dataset(deepcopy(whole_training_set), np.array(list(unlabelled_indices)))
 
     # Get test set for all classes
-    whole_test_dataset = INaturalist_SUB(root=data_root.inaturalist_root, subclassname=subclassname, transform=test_transform)
+    whole_test_dataset = INaturalist_SUB(root=data_root, subclassname=subclassname, transform=test_transform)
     test_dataset = subsample_classes(deepcopy(whole_test_dataset), include_classes=train_classes)
 
     # Either split train into train and val or use test set as val

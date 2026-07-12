@@ -272,19 +272,21 @@ def main(args):
 
         
         lr_scheduler.step(epoch)
-        # if args.output_dir:
-        #     if (epoch+1) % args.save_ep_freq == 0:
-        #         checkpoint_paths = [output_dir / 'checkpoints/checkpoint-{}.pth'.format(epoch)]
-        #         for checkpoint_path in checkpoint_paths:
-        #             utils.save_on_master({
-        #                 'model': model_without_ddp.state_dict(),
-        #                 'optimizer': optimizer.state_dict(),
-        #                 'lr_scheduler': lr_scheduler.state_dict(),
-        #                 'epoch': epoch,
-        #                 'model_ema': get_state_dict(model_ema),
-        #                 'scaler': loss_scaler.state_dict(),
-        #                 'args': args,
-        #             }, checkpoint_path)
+        # save checkpoint at the last epoch
+        if args.output_dir and (epoch + 1) == args.epochs:
+            checkpoint_path = output_dir / 'checkpoints/checkpoint_last.pth'
+            checkpoint = {
+                'model': model_without_ddp.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'lr_scheduler': lr_scheduler.state_dict(),
+                'epoch': epoch,
+                'scaler': loss_scaler.state_dict(),
+                'args': args,
+            }
+            if args.model_ema:
+                checkpoint['model_ema'] = model_ema.ema.state_dict()
+            torch.save(checkpoint, checkpoint_path)
+            logger.info(f"Saved last checkpoint to {checkpoint_path}")
 
 
     total_time = time.time() - start_time
