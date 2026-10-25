@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from tqdm import tqdm
 
-from utils import split_cluster_acc_v1, split_cluster_acc_v2, get_dis_max, SmoothedValue, MetricLogger
+from utils import split_cluster_acc_v1, split_cluster_acc_v2, get_dis_max, compute_d_intra, compute_anmi, SmoothedValue, MetricLogger
 
 
 def cos_eps_loss(u, y, hash_center):
@@ -187,5 +187,15 @@ def evaluate(test_loader, model, args, centers, dis_max):
 
     all_acc, old_acc, new_acc = split_cluster_acc_v2(y_true=targets, y_pred=preds1, mask=mask)
     logger.info(f"Evaluate V2: all_acc: {all_acc:.3f} old_acc: {old_acc:.3f} new_acc: {new_acc:.3f}")
+
+    # Code quality metrics on binary hash codes (d_intra lower is better, anMI higher is better)
+    codes = (all_feats > 0).astype(np.int8)
+    mask = mask.astype(bool)
+    for name, m in [('all', np.ones_like(mask)), ('old', mask), ('new', ~mask)]:
+        if not m.any():
+            continue
+        d_intra = compute_d_intra(codes[m], targets[m])
+        anmi = compute_anmi(codes[m], targets[m])
+        logger.info(f"Code {name}: d_intra: {d_intra:.4f} anMI: {anmi:.4f}")
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}

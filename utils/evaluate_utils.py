@@ -99,6 +99,61 @@ def split_cluster_acc_v2(y_true, y_pred, mask):
     return total_acc, old_acc, new_acc
 
 
+def _entropy_mm(counts):
+    """Miller-Madow bias-corrected entropy (bits) of a count vector."""
+    counts = np.asarray(counts, float)
+    N = counts.sum()
+    if N <= 0:
+        return 0.0
+    p = counts[counts > 0] / N
+    H = -(p * np.log2(p)).sum()
+    K = int((counts > 0).sum())
+    return H + (K - 1) / (2.0 * N * np.log(2))
+
+def compute_d_intra(B, y):
+    """
+    Intra-class bit inconsistency (lower is better):
+        d_intra = (1/C) * sum_c (2/D) * sum_j p_cj * (1 - p_cj)
+    p_cj is the activation rate of bit j within class c.
+
+    # Arguments
+        B: binary codes, numpy.array with shape `(n_samples, D)`
+        y: labels, numpy.array with shape `(n_samples,)`
+    """
+    B = B.astype(np.float64)
+    D = B.shape[1]
+    vals = []
+    for c in np.unique(y):
+        p_cj = B[y == c].mean(axis=0)
+        vals.append((2.0 / D) * (p_cj * (1.0 - p_cj)).sum())
+    return float(np.mean(vals)) if vals else 0.0
+
+def compute_anmi(B, y):
+    """
+    Activation-normalized mutual information (bits, higher is better):
+        anMI = sum_j I(Y; B_j) / sum_j f_j,   f_j = P(B_j = 1)
+    I(Y; B_j) is the two-sided MI with Miller-Madow correction, clipped at 0.
+
+    # Arguments
+        B: binary codes, numpy.array with shape `(n_samples, D)`
+        y: labels, numpy.array with shape `(n_samples,)`
+    """
+    _, y = np.unique(y, return_inverse=True)
+    C = y.max() + 1
+    B = B.astype(int)
+    HY = _entropy_mm(np.bincount(y, minlength=C))
+    f = B.mean(axis=0)
+    I = np.zeros(B.shape[1])
+    for j in range(B.shape[1]):
+        b = B[:, j]
+        Hb = _entropy_mm(np.bincount(b, minlength=2))
+        if Hb <= 1e-9:  # constant bit carries no class information
+            continue
+        joint = np.bincount(b * C + y, minlength=2 * C)
+        I[j] = max(Hb + HY - _entropy_mm(joint), 0.0)
+    return float(I.sum() / f.sum()) if f.sum() > 0 else 0.0
+
+
 def binomial_coefficient(n, k):
     return math.factorial(n) / (math.factorial(k) * math.factorial(n-k))
 
