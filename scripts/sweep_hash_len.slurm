@@ -1,12 +1,12 @@
 #!/bin/bash
 # Hash code length sweep on CUB and Pets (CARC Discovery, Slurm job array).
-# 16 tasks = 2 datasets x 8 code lengths, one GPU each.
+# 8 tasks = 2 datasets x 4 code lengths, one GPU each.
 #
 # Submit from the PHE repo root:
 #   mkdir -p log/slurm
 #   sbatch --account=<project_id> scripts/sweep_hash_len.slurm
 # Run a subset, e.g. only Pets:
-#   sbatch --account=<project_id> --array=8-15 scripts/sweep_hash_len.slurm
+#   sbatch --account=<project_id> --array=4-7 scripts/sweep_hash_len.slurm
 #
 #SBATCH --job-name=phe_hashlen
 #SBATCH --partition=gpu
@@ -16,7 +16,7 @@
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=48G
 #SBATCH --time=48:00:00
-#SBATCH --array=0-15
+#SBATCH --array=0-7
 #SBATCH --output=log/slurm/%x_%A_%a.out
 #SBATCH --error=log/slurm/%x_%A_%a.out
 
@@ -24,7 +24,7 @@ set -euo pipefail
 
 DATASETS=(cub pets)
 SEEDS=(1027 1029)    # same seeds as scripts/train_cub.sh and scripts/train_pets.sh
-LENGTHS=(12 16 32 64 128 256 512 1024)
+LENGTHS=(128 256 512 1024)
 
 idx=${SLURM_ARRAY_TASK_ID}
 ds_idx=$(( idx / ${#LENGTHS[@]} ))

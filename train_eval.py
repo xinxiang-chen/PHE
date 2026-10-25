@@ -111,13 +111,46 @@ def train_and_evaluate(model,
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
-def compute_hamming_distance_list(list1, list2):
-    """Compute the Hamming distance between two lists"""
-    # Use list comprehension and zip to compare if corresponding elements are different
-    differences = [x != y for x, y in zip(list1, list2)]
-    # Count the number of differing elements, which is the Hamming distance
-    hamming_distance = sum(differences)
-    return hamming_distance
+@torch.no_grad()
+def hash_assign(feats_hash, centers, radius, device='cuda'):
+    """
+    Greedy on-the-fly assignment of hash codes to categories.
+    Samples are visited in order; each one joins the nearest existing category
+    (first index on ties) if its Hamming distance is <= radius, otherwise it
+    opens a new category with its own code. An exact match has distance 0,
+    so it always joins the first identical code.
+
+    # Arguments
+        feats_hash: binary codes in {0, 1}, tensor with shape `(n_samples, L)`
+        centers: initial category codes (sign of hash centers), tensor with shape `(n_classes, L)`
+        radius: Hamming sphere radius
+
+    # Return
+        preds: category index of each sample, numpy.array with shape `(n_samples,)`
+    """
+    feats_hash = feats_hash.to(device=device, dtype=torch.int8)
+    n_init, n_samples = centers.shape[0], feats_hash.shape[0]
+    # Preallocate room for every sample opening a new category
+    bank = torch.empty(n_init + n_samples, feats_hash.shape[1], dtype=torch.int8, device=device)
+    bank[:n_init] = centers.to(device=device, dtype=torch.int8)
+    n_cat = n_init
+
+    preds = np.empty(n_samples, dtype=np.int64)
+    for i in range(n_samples):
+        feat = feats_hash[i]
+        distances = (bank[:n_cat] != feat).sum(1)
+        min_index = torch.argmin(distances)  # first minimum, same as list.index(min(...))
+        min_index, min_distance = torch.stack([min_index, distances[min_index]]).tolist()
+
+        if min_distance <= radius:
+            preds[i] = min_index
+        else:
+            # Outside every Hamming sphere: create a new category
+            bank[n_cat] = feat
+            preds[i] = n_cat
+            n_cat += 1
+
+    return preds
 
 @torch.no_grad()
 def evaluate(test_loader, model, args, centers, dis_max):
@@ -148,38 +181,10 @@ def evaluate(test_loader, model, args, centers, dis_max):
     all_feats = np.concatenate(all_feats, axis=0)
 
     # Hash
-    feats_hash = torch.Tensor(all_feats > 0).float().tolist()
-
-    hash_dict = centers.numpy().tolist()
+    feats_hash = torch.from_numpy(all_feats > 0)
 
     # Store the category index corresponding to each feature
-    preds1 = []  
-
-    for feat in feats_hash:
-        found = False
-        # First check if the same category index already exists
-        if feat in hash_dict:
-            # Use the index of that category
-            preds1.append(hash_dict.index(feat))  
-            found = True
-            
-        if not found:
-            # If no identical category index is found, then judge based on distance
-            distances = [compute_hamming_distance_list(feat, center) for center in hash_dict]
-            min_distance = min(distances)
-            min_index = distances.index(min_distance)
-
-            if min_distance <= radius:
-                preds1.append(min_index)
-                found = True
-
-        if not found:
-            # If the distance between feat and all existing categories exceeds the Hamming sphere radius, create a new category
-            hash_dict.append(feat) 
-            # Use the index of the new category as the classification result
-            preds1.append(len(hash_dict) - 1)
-
-    preds1 = np.array(preds1)
+    preds1 = hash_assign(feats_hash, centers, radius)
 
     all_acc, old_acc, new_acc = split_cluster_acc_v1(y_true=targets, y_pred=preds1, mask=mask)
     logger.info(f'test len(list(set(preds1))): {len(list(set(preds1)))} len(preds): {len(preds1)}')
