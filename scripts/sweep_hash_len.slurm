@@ -1,12 +1,12 @@
 #!/bin/bash
-# Hash code length sweep on CUB and Pets (CARC Discovery, Slurm job array).
-# 8 tasks = 2 datasets x 4 code lengths, one GPU each.
+# Hash code length sweep on CUB, Pets and Stanford Cars (CARC Discovery, Slurm job array).
+# 12 tasks = 3 datasets x 4 code lengths, one GPU each.
 #
 # Submit from the PHE repo root:
 #   mkdir -p log/slurm
 #   sbatch --account=<project_id> scripts/sweep_hash_len.slurm
-# Run a subset, e.g. only Pets:
-#   sbatch --account=<project_id> --array=4-7 scripts/sweep_hash_len.slurm
+# Run a subset, e.g. only Stanford Cars:
+#   sbatch --account=<project_id> --array=8-11 scripts/sweep_hash_len.slurm
 #
 #SBATCH --job-name=phe_hashlen
 #SBATCH --partition=gpu
@@ -16,14 +16,14 @@
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=48G
 #SBATCH --time=48:00:00
-#SBATCH --array=0-7
+#SBATCH --array=0-11
 #SBATCH --output=log/slurm/%x_%A_%a.out
 #SBATCH --error=log/slurm/%x_%A_%a.out
 
 set -euo pipefail
 
-DATASETS=(cub pets)
-SEEDS=(1027 1029)    # same seeds as scripts/train_cub.sh and scripts/train_pets.sh
+DATASETS=(cub pets scars)
+SEEDS=(1027 1029 1027)    # same seeds as scripts/train_{cub,pets,scars}.sh
 LENGTHS=(128 256 512 1024)
 
 idx=${SLURM_ARRAY_TASK_ID}
@@ -32,7 +32,7 @@ data_set=${DATASETS[$ds_idx]}
 seed=${SEEDS[$ds_idx]}
 L=${LENGTHS[$(( idx % ${#LENGTHS[@]} ))]}
 
-# Directory holding cub/, oxford_pets/ and dino/dino_vitbase16_pretrain.pth (see config.py)
+# Directory holding cub/, oxford_pets/, stanford_cars/ and dino/dino_vitbase16_pretrain.pth (see config.py)
 export PHE_DATA_ROOT=${PHE_DATA_ROOT:-$HOME/Datasets}
 
 module purge
